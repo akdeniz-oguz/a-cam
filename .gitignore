@@ -1,0 +1,10 @@
+/target
+/dist
+
+# scrcpy is a separate project. Its releases are around 90 MB of binaries and a copy here
+# would go stale, so tools/fetch-scrcpy.ps1 downloads an official one instead.
+/scrcpy
+
+# Icon source artwork and scratch exports: kept locally, not published.
+/a-cam.ai
+/Untitled-1.png

@@ -1,0 +1,13 @@
+[package]
+name = "a-cam-shared"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    # CreateFileW and CreateFileMappingW take SECURITY_ATTRIBUTES, hence this feature.
+    "Win32_Security",
+    "Win32_System_Memory",
+    "Win32_Storage_FileSystem",
+] }

@@ -1,0 +1,32 @@
+[package]
+name = "a-cam-source"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+# Must be a classic DLL so Windows can load it through COM.
+name = "a_cam_source"
+crate-type = ["cdylib"]
+
+[dependencies]
+a-cam-shared = { version = "0.1.0", path = "../shared" }
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Media_MediaFoundation",
+    # Defines PINNAME_VIDEO_CAPTURE.
+    "Win32_Media_KernelStreaming",
+    "Win32_System_Com",
+    # The `*_Impl` traits needed to *implement* COM interfaces sit behind these two
+    # features, because PROPVARIANT appears in their signatures.
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_LibraryLoader",
+    # RegCreateKeyExW takes SECURITY_ATTRIBUTES, so it sits behind this feature.
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_System_SystemServices",
+] }
+# The `implement` macro emits code that refers to `::windows_core`, so the name has to
+# resolve as a direct dependency. The version must match the one `windows` uses exactly:
+# two versions would mean two distinct sets of types and the traits would not line up.
+windows-core = "0.62.2"

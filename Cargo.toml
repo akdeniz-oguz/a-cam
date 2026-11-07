@@ -1,0 +1,36 @@
+# The project produces two binaries:
+#   a-cam.exe        — phone, decoding, user interface (this package)
+#   a_cam_source.dll — virtual camera source, loaded by the Windows Frame Server service
+# The second one has to be separate: Windows does not take frames from our process, it
+# feeds the virtual camera from a COM object it loads inside its own service.
+[workspace]
+members = ["shared", "source"]
+# Run from the workspace root, `cargo build` would otherwise build only the main package.
+# Listing both means one command produces the exe and the DLL.
+default-members = [".", "source"]
+# `a-cam-shared` holds the frame format and bridge shared by both sides.
+
+[package]
+name = "a-cam"
+version = "0.1.0"
+edition = "2024"
+
+# Optimise dependencies even in debug builds: unoptimised YUV→RGBA conversion and H.264
+# decoding run tens of times slower, which makes performance measurements meaningless.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+lto = "thin"
+
+[dependencies]
+a-cam-shared = { version = "0.1.0", path = "shared" }
+anyhow = "1.0.104"
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }
+image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }
+openh264 = "0.9.9"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_System_Com", "Win32_Media_MediaFoundation"] }
+
+[build-dependencies]
+image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }
+winresource = "0.1.34"

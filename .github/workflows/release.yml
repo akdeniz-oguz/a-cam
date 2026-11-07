@@ -1,0 +1,76 @@
+name: Release
+
+# Publishes a ready-to-run zip so people can download a-Cam without installing Rust.
+# Triggered by pushing a tag such as v0.1.0, or by hand from the Actions tab.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install MinGW
+        run: choco install mingw --no-progress -y
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --release --target x86_64-pc-windows-gnu
+
+      # scrcpy is not vendored in the repository, so the release archive picks up an
+      # official build. Apache-2.0 allows redistribution; its LICENSE comes along in the
+      # folder the script extracts.
+      - name: Fetch scrcpy
+        run: ./tools/fetch-scrcpy.ps1
+        shell: pwsh
+
+      - name: Assemble the package
+        shell: pwsh
+        run: |
+          $out = 'dist/a-Cam'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $bin = 'target/x86_64-pc-windows-gnu/release'
+          Copy-Item "$bin/a-cam.exe" $out
+          Copy-Item "$bin/a_cam_source.dll" $out
+          # The H.264 decoder is C++, so the executable needs the MinGW runtime next to it.
+          $gcc = (Get-Command gcc).Source | Split-Path
+          foreach ($dll in 'libstdc++-6.dll', 'libgcc_s_seh-1.dll', 'libwinpthread-1.dll') {
+            Copy-Item (Join-Path $gcc $dll) $out
+          }
+          Copy-Item scrcpy $out/scrcpy -Recurse
+          Copy-Item tools/install-vcam.ps1 $out
+          Copy-Item README.md, LICENSE, THIRD-PARTY.md $out
+          Compress-Archive -Path $out -DestinationPath 'a-Cam-windows-x64.zip' -Force
+
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          files: a-Cam-windows-x64.zip
+          generate_release_notes: true
+          body: |
+            ## Download
+
+            Grab `a-Cam-windows-x64.zip`, unpack it anywhere and run `a-cam.exe`.
+            Nothing else to install — scrcpy and adb are in the archive.
+
+            **The phone needs Developer options and USB debugging turned on.** That is how
+            a-Cam drives the phone, and it is what lets it work without installing anything
+            on the phone itself. Android 12 or newer is required.
+
+            To also use the phone as a webcam in Zoom, Meet, Teams or Discord, run once in
+            an administrator PowerShell:
+
+            ```powershell
+            .\install-vcam.ps1
+            ```
