@@ -19,14 +19,16 @@ jobs:
       - name: Install MinGW
         run: choco install mingw --no-progress -y
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
+      # As in CI: rust-toolchain.toml is the single source of truth for the toolchain.
+      - name: Install the toolchain
+        run: |
+          rustup show active-toolchain
+          rustc --version
 
       - uses: Swatinem/rust-cache@v2
 
       - name: Build
-        run: cargo build --workspace --release --target x86_64-pc-windows-gnu
+        run: cargo build --workspace --release
 
       # scrcpy is not vendored in the repository, so the release archive picks up an
       # official build. Apache-2.0 allows redistribution; its LICENSE comes along in the
@@ -40,9 +42,8 @@ jobs:
         run: |
           $out = 'dist/a-Cam'
           New-Item -ItemType Directory -Path $out -Force | Out-Null
-          $bin = 'target/x86_64-pc-windows-gnu/release'
-          Copy-Item "$bin/a-cam.exe" $out
-          Copy-Item "$bin/a_cam_source.dll" $out
+          Copy-Item target/release/a-cam.exe $out
+          Copy-Item target/release/a_cam_source.dll $out
           # The H.264 decoder is C++, so the executable needs the MinGW runtime next to it.
           $gcc = (Get-Command gcc).Source | Split-Path
           foreach ($dll in 'libstdc++-6.dll', 'libgcc_s_seh-1.dll', 'libwinpthread-1.dll') {

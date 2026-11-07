@@ -15,16 +15,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The project targets the GNU toolchain, so that building it needs only MinGW and
-      # not a Visual Studio install. MinGW supplies two things Rust needs here: dlltool,
-      # used when linking against system DLLs, and gcc/g++ for the C++ H.264 decoder.
+      # MinGW supplies two things Rust needs here: dlltool, used when linking against
+      # system DLLs, and gcc/g++ for the C++ H.264 decoder. Visual Studio is not needed.
       - name: Install MinGW
         run: choco install mingw --no-progress -y
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-gnu
-          components: rustfmt, clippy
+      # The toolchain comes from rust-toolchain.toml and nothing else. Using an action as
+      # well would set RUSTUP_TOOLCHAIN, which overrides that file and silently builds
+      # with a different host than the project is tested against.
+      - name: Install the toolchain
+        run: |
+          rustup show active-toolchain
+          rustup component add rustfmt clippy
+          rustc --version
+          cargo fmt --version
+          cargo clippy --version
 
       - uses: Swatinem/rust-cache@v2
 
@@ -32,7 +37,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --target x86_64-pc-windows-gnu -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Build
-        run: cargo build --workspace --release --target x86_64-pc-windows-gnu
+        run: cargo build --workspace --release
