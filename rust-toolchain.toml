@@ -1,9 +1,0 @@
-# The GNU target is what this project is built and tested with. It keeps the build to
-# rustup plus MinGW, with no Visual Studio install needed; MinGW supplies dlltool for
-# linking against system DLLs and gcc/g++ for the C++ H.264 decoder.
-#
-# The channel names the host explicitly. Plain "stable" would resolve to rustup's default
-# host, which on most Windows machines is MSVC, and the build would then look for link.exe.
-[toolchain]
-channel = "stable-x86_64-pc-windows-gnu"
-components = ["rustfmt", "clippy"]

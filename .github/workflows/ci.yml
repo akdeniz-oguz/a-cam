@@ -27,16 +27,16 @@ jobs:
       - name: Install MinGW
         run: choco install mingw --no-progress -y
 
-      # The toolchain comes from rust-toolchain.toml and nothing else. Using an action as
-      # well would set RUSTUP_TOOLCHAIN, which overrides that file and silently builds
-      # with a different host than the project is tested against.
-      - name: Install the toolchain
+      # The host has to be selected here rather than in a rust-toolchain.toml: that file's
+      # `channel` field takes a channel name only and rejects a host triple, and runners
+      # default to the MSVC host, which would need Visual Studio.
+      - name: Install the GNU toolchain
         run: |
-          rustup show active-toolchain
-          rustup component add rustfmt clippy
+          rustup toolchain install stable-x86_64-pc-windows-gnu \
+            --component rustfmt,clippy --profile minimal --no-self-update
+          rustup default stable-x86_64-pc-windows-gnu
           rustc --version
           cargo fmt --version
-          cargo clippy --version
 
       - uses: Swatinem/rust-cache@v2
 

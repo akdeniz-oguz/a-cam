@@ -26,10 +26,13 @@ jobs:
       - name: Install MinGW
         run: choco install mingw --no-progress -y
 
-      # As in CI: rust-toolchain.toml is the single source of truth for the toolchain.
-      - name: Install the toolchain
+      # The host has to be selected here: runners default to MSVC, which would need
+      # Visual Studio, and a rust-toolchain.toml cannot pin a host.
+      - name: Install the GNU toolchain
         run: |
-          rustup show active-toolchain
+          rustup toolchain install stable-x86_64-pc-windows-gnu \
+            --profile minimal --no-self-update
+          rustup default stable-x86_64-pc-windows-gnu
           rustc --version
 
       - uses: Swatinem/rust-cache@v2
