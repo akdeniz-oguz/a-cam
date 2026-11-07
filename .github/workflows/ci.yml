@@ -9,6 +9,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# Windows runners default to PowerShell, which treats anything a command writes to stderr
+# as a failure. rustup and cargo report progress there, so steps fail even when they
+# succeeded. bash does not do that.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     runs-on: windows-latest

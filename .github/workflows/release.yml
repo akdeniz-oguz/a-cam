@@ -10,6 +10,13 @@ on:
 permissions:
   contents: write
 
+# Windows runners default to PowerShell, which treats anything a command writes to stderr
+# as a failure. rustup and cargo report progress there, so steps fail even when they
+# succeeded. Steps that genuinely need PowerShell set `shell: pwsh` themselves.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   release:
     runs-on: windows-latest
