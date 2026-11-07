@@ -46,6 +46,8 @@ jobs:
       - name: Fetch scrcpy
         run: ./tools/fetch-scrcpy.ps1
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
       - name: Assemble the package
         shell: pwsh

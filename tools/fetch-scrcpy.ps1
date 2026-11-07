@@ -28,11 +28,24 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $target = Join-Path $root 'scrcpy'
 
+# Used when the version lookup cannot be made, so a rate-limited CI run still produces a
+# working package rather than failing outright.
+$fallbackVersion = '5.0.1'
+
 if (-not $Version) {
-    Write-Host "Looking up the latest scrcpy release..."
-    $release = Invoke-RestMethod 'https://api.github.com/repos/Genymobile/scrcpy/releases/latest' `
-        -Headers @{ 'User-Agent' = 'a-cam-setup' }
-    $Version = $release.tag_name -replace '^v', ''
+    $headers = @{ 'User-Agent' = 'a-cam-setup' }
+    # Unauthenticated API calls are rate limited per IP, and CI runners share theirs, so
+    # use the workflow token when one is in the environment.
+    if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
+    try {
+        Write-Host "Looking up the latest scrcpy release..."
+        $release = Invoke-RestMethod 'https://api.github.com/repos/Genymobile/scrcpy/releases/latest' `
+            -Headers $headers
+        $Version = $release.tag_name -replace '^v', ''
+    } catch {
+        Write-Host "Lookup failed ($($_.Exception.Message)); using $fallbackVersion." -ForegroundColor Yellow
+        $Version = $fallbackVersion
+    }
 }
 Write-Host "scrcpy version: $Version"
 
