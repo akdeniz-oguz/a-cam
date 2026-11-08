@@ -40,6 +40,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # adb and scrcpy-server are embedded into the executable at build time, so they have
+      # to be on disk before cargo runs. Without them the build still succeeds, but the
+      # binary is not self-contained and warns about it.
+      - name: Fetch scrcpy
+        run: ./tools/fetch-scrcpy.ps1
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
       - name: Formatting
         run: cargo fmt --all --check
 

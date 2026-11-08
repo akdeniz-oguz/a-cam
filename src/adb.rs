@@ -53,6 +53,17 @@ pub struct Tools {
 impl Tools {
     /// Looks for the scrcpy files next to the exe or in the working directory.
     pub fn find() -> Result<Self> {
+        // A normal build carries adb and scrcpy-server, so there is nothing to look for:
+        // they are written to a per-user cache the first time they are needed.
+        if crate::bundled::AVAILABLE {
+            let dir = crate::bundled::extract()?;
+            return Ok(Self {
+                adb: dir.join(exe_name("adb")),
+                server: dir.join("scrcpy-server"),
+                version: crate::bundled::version().to_string(),
+            });
+        }
+
         let mut roots = Vec::new();
         if let Ok(exe) = std::env::current_exe() {
             // During development we run from target/debug, so look at the project root too.

@@ -11,12 +11,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adb;
+mod bundled;
 mod capture;
 mod stream;
 mod vcam;
+mod vcam_install;
 
 use eframe::egui;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const BG: egui::Color32 = egui::Color32::from_rgb(0x17, 0x18, 0x1c);
 const VIDEO_BG: egui::Color32 = egui::Color32::from_rgb(0x0e, 0x0f, 0x12);
@@ -35,6 +37,19 @@ const QUALITIES: [(&str, u32); 3] = [("720p", 1280), ("1080p", 1920), ("1440p", 
 const ROTATIONS: [&str; 4] = ["0°", "90°", "180°", "270°"];
 
 fn main() -> eframe::Result {
+    // The elevated copy of ourselves that places and registers the camera source. It has
+    // no window: it does the one job it was started for and exits.
+    let arguments: Vec<String> = std::env::args().collect();
+    for (flag, uninstall) in [
+        (vcam_install::INSTALL_FLAG, false),
+        (vcam_install::UNINSTALL_FLAG, true),
+    ] {
+        if arguments.iter().any(|argument| argument == flag) {
+            vcam_install::run_elevated_action(uninstall);
+            return Ok(());
+        }
+    }
+
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(APP_NAME)
         .with_inner_size([1020.0, 660.0])
@@ -211,6 +226,15 @@ struct App {
     /// Whether adb's background server was already running when we started. If we started
     /// it, we stop it on exit so nothing of ours is left behind in Task Manager.
     adb_was_running: bool,
+    /// Whether the one-time elevated setup for the camera source has been done. Checked
+    /// at startup and again after the setup runs.
+    vcam_installed: bool,
+    /// Whether the webcam setup has been offered this run, so declining is not met with
+    /// the same prompt on every Start Stream.
+    webcam_setup_asked: bool,
+    /// Set while an elevated setup is running; the deadline bounds the wait.
+    webcam_setup_until: Option<Instant>,
+    webcam_setup_checked: Instant,
     busy: Option<std::sync::mpsc::Receiver<Job>>,
 }
 
@@ -248,6 +272,10 @@ impl App {
             log_open: false,
             phone_hint_shown: false,
             adb_was_running: adb::server_running(),
+            vcam_installed: vcam_install::is_installed(),
+            webcam_setup_asked: false,
+            webcam_setup_until: None,
+            webcam_setup_checked: Instant::now(),
             busy: None,
         };
         match adb::Tools::find() {
@@ -394,6 +422,55 @@ impl App {
         self.status = ("Connecting...".into(), ACCENT);
     }
 
+    /// Asks Windows to run the one-time setup that lets it load the camera source.
+    ///
+    /// Started from Start Stream rather than from a button of its own: the consent prompt
+    /// Windows raises is already the place to decide, and asking twice helps nobody. It is
+    /// offered once per run, so declining does not turn into nagging.
+    fn request_webcam_setup(&mut self) {
+        self.webcam_setup_asked = true;
+        match vcam_install::request_install(false) {
+            Ok(()) => {
+                // The elevated copy runs on its own. Rather than blocking the interface
+                // while the consent prompt is up, watch for the result from the UI loop.
+                self.webcam_setup_until = Some(Instant::now() + Duration::from_secs(60));
+                self.info("Waiting for webcam setup to finish...".into());
+            }
+            Err(err) => {
+                self.info(format!("Webcam output not enabled: {err:#}"));
+            }
+        }
+    }
+
+    /// Picks up the result of the elevated setup without blocking the interface.
+    fn poll_webcam_setup(&mut self) {
+        let Some(deadline) = self.webcam_setup_until else {
+            return;
+        };
+        let now = Instant::now();
+        // A registry read every frame would be wasteful for something this slow.
+        if now < self.webcam_setup_checked + Duration::from_millis(400) {
+            return;
+        }
+        self.webcam_setup_checked = now;
+
+        if vcam_install::is_installed() {
+            self.webcam_setup_until = None;
+            self.vcam_installed = true;
+            self.info("Webcam output is ready.".into());
+            if self.state == State::Streaming {
+                self.start_virtual_camera();
+            }
+        } else if now >= deadline {
+            self.webcam_setup_until = None;
+            self.info(
+                "Webcam output is off; the stream is unaffected. Restart a-Cam to be asked \
+                 again."
+                    .into(),
+            );
+        }
+    }
+
     /// Brings the virtual camera up together with the stream.
     ///
     /// There is no separate button: the camera appears when streaming starts and goes away
@@ -401,6 +478,14 @@ impl App {
     /// stream still runs, just without webcam output.
     fn start_virtual_camera(&mut self) {
         if self.vcam.is_some() {
+            return;
+        }
+        // Without the one-time elevated setup there is nothing for Windows to load, so
+        // ask for it now; the camera comes up as soon as it is done.
+        if !self.vcam_installed {
+            if vcam_install::AVAILABLE && !self.webcam_setup_asked {
+                self.request_webcam_setup();
+            }
             return;
         }
         match vcam::VirtualCamera::start() {
@@ -632,6 +717,13 @@ impl App {
             ui.label(
                 egui::RichText::new("Pick it in Zoom, Meet, Discord...")
                     .color(FAINT)
+                    .small(),
+            );
+        } else if self.webcam_setup_until.is_some() {
+            ui.add_space(8.0);
+            ui.label(
+                egui::RichText::new("Setting up webcam output...")
+                    .color(MUTED)
                     .small(),
             );
         }
@@ -1008,6 +1100,7 @@ impl eframe::App for App {
         // Published every frame: it is cheap, and it avoids having to catch each individual
         // settings change, crop dragging included.
         self.publish_transform();
+        self.poll_webcam_setup();
         self.poll_jobs();
         self.pump_capture(&ctx);
 

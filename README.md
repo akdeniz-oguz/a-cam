@@ -37,28 +37,29 @@
 
 ---
 
+- **One file.** `a-Cam.exe` and nothing else — no archive to unpack, no installer
 - **No APK** is installed on the phone
 - **No OBS** and no third-party virtual camera driver
 - Written in Rust; the preview is drawn on the GPU
 
 ## Download
 
-Pre-built archives are on the [releases page](../../releases/latest). Unpack
-`a-Cam-windows-x64.zip` anywhere and run `a-cam.exe` — scrcpy and adb are already inside, so
-there is nothing else to install.
+[**a-Cam.exe** from the releases page](../../releases/latest). Save it anywhere and run it.
 
-To use the phone as a webcam in other applications, run once in an **administrator**
-PowerShell:
+adb, scrcpy's server and the Windows camera source all travel inside the executable, so
+there is nothing else to download and nothing to install. On first run adb and the server
+are written to `%LOCALAPPDATA%\a-Cam\`, because adb has to exist as a file to be launched
+and the server has to be copied to the phone.
 
-```powershell
-.\install-vcam.ps1
-```
+Webcam output needs no separate step either: press **Start Stream** and Windows asks once
+for permission to place the camera source. Decline it and the preview still works, just
+without the webcam.
 
 ## How it works
 
 ```
 ┌──────── Android phone ──────────┐      ┌──────────────── Desktop ──────────────────┐
-│ Camera                          │      │  a-cam.exe                                │
+│ Camera                          │      │  a-Cam.exe                                │
 │   ↓                             │ USB  │    adb forward → H.264 decode (openh264)  │
 │ scrcpy-server (app_process)     ├─────►│      ↓                    ↓               │
 │ hardware H.264 encoder          │      │   GPU texture         NV12 conversion     │
@@ -74,34 +75,42 @@ PowerShell:
                                                       Zoom / Meet / Teams / Discord
 ```
 
-**Why two binaries?** `MFCreateVirtualCamera` does not take frames from our process: it is
-given a CLSID and loads that COM object inside its own service. The code feeding the camera
-therefore has to be a separate DLL. The two processes talk through a file-backed memory
-mapping under `C:\Users\Public`; they run in different sessions, where named shared memory
-would require a privilege a normal user does not have.
+**Why a second binary?** `MFCreateVirtualCamera` does not take frames from our process: it
+is given a CLSID and loads that COM object inside its own service. The code feeding the
+camera therefore has to be a separate DLL. a-Cam carries it and places it in
+`C:\Program Files\a-Cam\` the first time the webcam is used — it cannot live in a user
+profile folder, because the Frame Server service cannot read those. The two processes talk
+through a file-backed memory mapping under `C:\Users\Public`; they run in different
+sessions, where named shared memory would require a privilege a normal user does not have.
 
 ## Layout
 
 ```
 a-cam/
-├── src/              a-cam.exe — interface, adb, decoding, preview
+├── src/              a-Cam.exe — interface, adb, decoding, preview
 │   ├── main.rs       egui interface, crop / zoom / rotation
 │   ├── adb.rs        device discovery, camera listing
 │   ├── stream.rs     starts scrcpy-server, reads H.264 packets
 │   ├── capture.rs    decoding, RGBA (screen) and NV12 (virtual camera)
-│   └── vcam.rs       registers the virtual camera with the system
+│   ├── bundled.rs    the embedded adb / scrcpy-server, written out on first run
+│   ├── vcam.rs       registers the virtual camera with the system
+│   └── vcam_install.rs  places and registers the camera source (asks for elevation)
 ├── source/           a_cam_source.dll — the COM media source Windows loads
 ├── shared/           frame bridge shared by both sides
 ├── assets/           application icon
 ├── tools/
-│   ├── install-vcam.ps1   installs and registers the DLL (administrator)
-│   └── package.ps1        produces a distributable folder
-└── scrcpy/           contents of the scrcpy Windows zip (tools/fetch-scrcpy.ps1)
+│   └── fetch-scrcpy.ps1   downloads the scrcpy release that gets embedded
+└── scrcpy/           contents of the scrcpy Windows zip (not in git)
 ```
+
+`build.rs` does the bundling: it builds `source/`, embeds the DLL, embeds five files out of
+`scrcpy/`, and links the C++ runtime statically so the executable has no DLL dependencies
+of its own.
 
 scrcpy is not vendored into this repository: it is a separate project, its releases are
 around 90 MB of binaries, and a copy in git would go stale. `tools/fetch-scrcpy.ps1`
-downloads an official release, and the published archives bundle one.
+downloads an official release at build time; only five files out of it are embedded, since
+the rest belongs to the scrcpy application itself, which a-Cam never runs.
 
 ## Requirements
 
@@ -109,7 +118,7 @@ downloads an official release, and the published archives bundle one.
 |---|---|
 | Phone | **Android 12+** (camera capture arrived in that release), with **Developer options and USB debugging enabled** — see the notice above |
 | Windows | **Windows 11** for the virtual camera; the preview also works on Windows 10 |
-| scrcpy | 2.2+ Windows zip, extracted into `scrcpy/` |
+| scrcpy | Only to *build*: a 2.2+ Windows zip in `scrcpy/`. Released builds already contain it |
 
 ## Building
 
@@ -124,19 +133,19 @@ rustup default stable-x86_64-pc-windows-gnu
 cargo build --release
 ```
 
+`target\release\a-cam.exe` is the whole distributable — around 21 MB, with no files beside
+it. There is no packaging step.
+
 > MinGW provides two things: `dlltool`, which Rust's GNU target uses when linking against
 > system DLLs, and `gcc`/`g++`, because the H.264 decoder is written in C++.
 
-For a distributable folder:
-
-```powershell
-.\tools\package.ps1
-```
+Building without `scrcpy/` also works, but the result is not self-contained: it looks for a
+`scrcpy` folder on disk instead, and the build prints a warning saying so.
 
 ## Using it
 
 1. Connect the phone over USB and accept the **USB debugging** prompt.
-2. Run `a-cam.exe`. Cameras are listed automatically.
+2. Run `a-Cam.exe`. Cameras are listed automatically.
 3. Press **Start Stream**.
 
 | Control | What it does |
@@ -151,22 +160,16 @@ Rotation, mirroring, zoom and crop all apply to the preview *and* the virtual ca
 
 ### Virtual camera
 
-One-off setup, in an **administrator PowerShell**:
+There is nothing to set up. **Start Stream** brings the webcam up with it, and the phone
+appears as **a-Cam (phone)** in Zoom, Meet, Teams, Discord and browsers. **Stop** removes
+it again.
 
-```powershell
-.\tools\install-vcam.ps1
-```
+The very first time, Windows shows one **User Account Control** prompt: the camera source
+has to be placed in `C:\Program Files\a-Cam\`, which needs administrator rights once.
+Afterwards it is silent. Declining is fine — the stream keeps running without webcam
+output, and a-Cam does not ask again until it is restarted.
 
-After that it is automatic: pressing **Start Stream** makes the camera appear as
-**a-Cam (phone)**, and **Stop** removes it.
-
-If the DLL is not registered the stream still works; there is simply no webcam output, and
-a warning appears in the LOG panel.
-
-To remove it: `.\tools\install-vcam.ps1 -Uninstall`
-
-> The DLL is installed into `C:\Program Files\a-cam\`. It cannot run from a user profile
-> folder, because the Windows Frame Server service cannot read those.
+To remove the camera source again, run `a-cam.exe --remove-webcam`.
 
 ## Known limitations
 
@@ -182,11 +185,11 @@ To remove it: `.\tools\install-vcam.ps1 -Uninstall`
 
 | Symptom | Fix |
 |---|---|
-| "No phone found" | Pull down the phone's USB notification and set the connection to File transfer (MTP) or Photo transfer (PTP) rather than charging only. Some cables carry power but no data. |
+| "No phone found" | Turn on Developer options and USB debugging, then pull down the phone's USB notification and set the connection to File transfer (MTP) or Photo transfer (PTP) rather than charging only. Some cables carry power but no data. |
 | "Waiting for USB authorization" | Accept the prompt on the phone |
 | "The phone did not return a camera list" | Android 12 or newer is required |
 | Picture upside down | Set **Rotation** to 180° |
-| Virtual camera missing from the list | Did `install-vcam.ps1` run as administrator? Is the stream running? |
+| Virtual camera missing from the list | Is the stream running? If the UAC prompt was declined, restart a-Cam and accept it |
 | Colour bars in the virtual camera | The stream is off; press **Start Stream** |
 
 Detailed errors appear in the application's **LOG** panel. If the virtual camera side

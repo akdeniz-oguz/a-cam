@@ -37,53 +37,45 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --workspace --release
-
-      # scrcpy is not vendored in the repository, so the release archive picks up an
-      # official build. Apache-2.0 allows redistribution; its LICENSE comes along in the
-      # folder the script extracts.
+      # adb, scrcpy-server and the camera source DLL are all embedded into the executable
+      # at build time, which is what makes the download a single file. scrcpy therefore
+      # has to be on disk before cargo runs.
       - name: Fetch scrcpy
         run: ./tools/fetch-scrcpy.ps1
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Assemble the package
+      - name: Build
+        run: cargo build --release
+
+      - name: Check that the build is self-contained
         shell: pwsh
         run: |
-          $out = 'dist/a-Cam'
-          New-Item -ItemType Directory -Path $out -Force | Out-Null
-          Copy-Item target/release/a-cam.exe $out
-          Copy-Item target/release/a_cam_source.dll $out
-          # The H.264 decoder is C++, so the executable needs the MinGW runtime next to it.
-          $gcc = (Get-Command gcc).Source | Split-Path
-          foreach ($dll in 'libstdc++-6.dll', 'libgcc_s_seh-1.dll', 'libwinpthread-1.dll') {
-            Copy-Item (Join-Path $gcc $dll) $out
+          $exe = 'target/release/a-cam.exe'
+          $size = (Get-Item $exe).Length / 1MB
+          if ($size -lt 15) {
+            throw "a-cam.exe is only $([math]::Round($size,1)) MB; the tools were not embedded."
           }
-          Copy-Item scrcpy $out/scrcpy -Recurse
-          Copy-Item tools/install-vcam.ps1 $out
-          Copy-Item README.md, LICENSE, THIRD-PARTY.md $out
-          Compress-Archive -Path $out -DestinationPath 'a-Cam-windows-x64.zip' -Force
+          Copy-Item $exe 'a-Cam.exe'
+          Write-Host "a-Cam.exe is $([math]::Round($size,1)) MB"
 
       - name: Publish
         uses: softprops/action-gh-release@v2
         with:
-          files: a-Cam-windows-x64.zip
+          files: a-Cam.exe
           generate_release_notes: true
           body: |
             ## Download
 
-            Grab `a-Cam-windows-x64.zip`, unpack it anywhere and run `a-cam.exe`.
-            Nothing else to install — scrcpy and adb are in the archive.
+            One file: `a-Cam.exe`. Save it anywhere and run it. Nothing to unpack and
+            nothing to install — adb, scrcpy-server and the camera source all travel
+            inside it.
 
             **The phone needs Developer options and USB debugging turned on.** That is how
             a-Cam drives the phone, and it is what lets it work without installing anything
             on the phone itself. Android 12 or newer is required.
 
-            To also use the phone as a webcam in Zoom, Meet, Teams or Discord, run once in
-            an administrator PowerShell:
-
-            ```powershell
-            .\install-vcam.ps1
-            ```
+            Webcam output needs no separate step: press **Start Stream** and Windows asks
+            once for permission to place the camera source. Decline it and the preview
+            still works, just without the webcam. Windows 11 is required for that part.
