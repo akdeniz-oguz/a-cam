@@ -76,4 +76,9 @@ if (-not (Test-Path $server)) {
     Write-Host "scrcpy-server is missing from the archive. Extract it manually." -ForegroundColor Red
     exit 1
 }
+
+# The server refuses to run unless the client reports exactly its own version, so the build
+# has to compile it in. Recording it here saves build.rs from launching scrcpy.exe to ask,
+# which is a windowed binary and not something a headless CI runner should have to run.
+Set-Content -Path (Join-Path $target 'version.txt') -Value $Version -Encoding utf8
 Write-Host "Ready: $target" -ForegroundColor Green

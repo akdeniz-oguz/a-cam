@@ -82,6 +82,7 @@ fn bundle_scrcpy() {
     for file in BUNDLED {
         println!("cargo:rerun-if-changed=scrcpy/{file}");
     }
+    println!("cargo:rerun-if-changed=scrcpy/version.txt");
     println!("cargo:rerun-if-changed=scrcpy/scrcpy.exe");
 
     let missing: Vec<&str> = BUNDLED
@@ -99,9 +100,8 @@ fn bundle_scrcpy() {
     }
 
     // The server refuses to run unless the client reports exactly its own version, so it
-    // is read here and compiled in. That is also why scrcpy.exe is needed at build time
-    // but never at runtime.
-    let Some(version) = scrcpy_version(&folder.join("scrcpy.exe")) else {
+    // is read here and compiled in.
+    let Some(version) = scrcpy_version(folder) else {
         println!("cargo:warning=could not read the scrcpy version; tools are not embedded");
         return;
     };
@@ -110,8 +110,25 @@ fn bundle_scrcpy() {
     println!("cargo:rustc-cfg=embedded_scrcpy");
 }
 
-fn scrcpy_version(exe: &Path) -> Option<String> {
-    let output = Command::new(exe).arg("--version").output().ok()?;
+/// The version of the scrcpy release sitting in `folder`.
+///
+/// `tools/fetch-scrcpy.ps1` leaves it in a file, which is the preferred source: it costs
+/// nothing and works on a machine that cannot run a windowed binary. A folder extracted by
+/// hand will not have that file, so as a fallback scrcpy.exe is asked directly. That is the
+/// only reason scrcpy.exe is needed at build time; it is never run afterwards.
+fn scrcpy_version(folder: &Path) -> Option<String> {
+    let recorded = std::fs::read_to_string(folder.join("version.txt"))
+        .ok()
+        .map(|text| text.trim().trim_start_matches('v').to_string())
+        .filter(|version| !version.is_empty());
+    if let Some(version) = recorded {
+        return Some(version);
+    }
+
+    let output = Command::new(folder.join("scrcpy.exe"))
+        .arg("--version")
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout).into_owned()
         + &String::from_utf8_lossy(&output.stderr);
     text.lines()
